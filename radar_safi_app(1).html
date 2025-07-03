@@ -1,0 +1,355 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html>
+<head>
+  <title>Radar-Safi Sync Platform</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f0f0f0; }
+    .tab { display: none; padding: 20px; border: 1px solid #ccc; margin-top: 10px; }
+    .tab.active { display: block; }
+    .form-container, .dashboard { border: 1px solid #ccc; padding: 20px; margin-top: 10px; }
+    .blip { color: green; font-weight: bold; }
+    .nutrient { color: blue; }
+    button { margin: 5px; padding: 8px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background-color: #0056b3; }
+    nav button { background-color: #6c757d; }
+    nav button:hover { background-color: #5a6268; }
+    #map { height: 300px; width: 100%; margin-top: 10px; border: 1px solid #ddd; }
+    .message { margin-top: 10px; padding: 10px; border-radius: 4px; }
+    .success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+    .error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+  </style>
+</head>
+<body>
+  <h1>Radar-Safi Sync Platform</h1>
+  <nav>
+    <button onclick="openTab('farmer')">Farmer</button>
+    <button onclick="openTab('health')">Health</button>
+    <button onclick="openTab('operator')">Operator</button>
+  </nav>
+
+  <div id="farmer" class="tab active">
+    <h2>Farmer Registration</h2>
+    <div class="form-container">
+      <form id="farmerForm">
+        <label>Farmer Name: <input type="text" name="farmerName" required></label><br>
+        <label>Contact: <input type="tel" name="contact" placeholder="e.g., +254712345678" required></label><br>
+        <label>Produce: <input type="text" name="produce" required></label><br>
+        <label>GPS (Lat, Lng): <input type="text" name="gps" placeholder="e.g., 0.1958, 35.0820" required pattern="^-?\d{1,2}(\.\d+)?,\s*-?\d{1,3}(\.\d+)?$" title="Enter coordinates like 0.1958, 35.0820"></label><br>
+        <label>Harvest Ready: <input type="checkbox" name="ready"> Yes</label><br>
+        <button type="submit">Register Farmer</button>
+      </form>
+      <div id="farmerMessage" class="message"></div>
+    </div>
+    <div class="dashboard">
+      <h3>Latest Registered Farmer:</h3>
+      <p>Produce: <span id="farmerProduceDisplay" class="blip">N/A</span></p>
+      <p>Contact: <span id="farmerContactDisplay" class="blip">N/A</span></p>
+    </div>
+  </div>
+
+  <div id="health" class="tab">
+    <h2>Nutritional Data</h2>
+    <div class="form-container">
+      <form id="healthForm">
+        <label>Zone: <input type="text" name="zone" required></label><br>
+        <label>Deficiency: <input type="text" name="deficiency" required></label><br>
+        <label>Suggested Crop: <input type="text" name="crop" required></label><br>
+        <label>GPS (Lat, Lng): <input type="text" name="gps" placeholder="e.g., 0.1958, 35.0820" required pattern="^-?\d{1,2}(\.\d+)?,\s*-?\d{1,3}(\.\d+)?$" title="Enter coordinates like 0.1958, 35.0820"></label><br>
+        <button type="submit">Submit Nutritional Data</button>
+      </form>
+      <div id="healthMessage" class="message"></div>
+    </div>
+    <div class="dashboard">
+      <h3>Current Nutritional Priority:</h3>
+      <p>Priority: <span id="healthPriorityDisplay" class="nutrient">N/A</span></p>
+    </div>
+  </div>
+
+  <div id="operator" class="tab">
+    <h2>Operator Dashboard</h2>
+    <div class="form-container">
+      <form id="operatorForm">
+        <label>Name: <input type="text" name="operatorName" required></label><br>
+        <label>Vehicle: <input type="text" name="vehicle" required></label><br>
+        <label>Current Location (GPS): <input type="text" name="location" placeholder="e.g., 0.1958, 35.0820" required pattern="^-?\d{1,2}(\.\d+)?,\s*-?\d{1,3}(\.\d+)?$" title="Enter coordinates like 0.1958, 35.0820"></label><br>
+        <label>Available: <input type="checkbox" name="available"> Yes</label><br>
+        <button type="submit">Register Operator</button>
+      </form>
+      <div id="operatorMessage" class="message"></div>
+    </div>
+    <div class="dashboard">
+      <h3>Available Cargo for Pickup:</h3>
+      <p>Cargo: <span id="operatorCargoDisplay" class="blip">No cargo awaiting pickup.</span></p>
+      <button onclick="checkOff()">Check Off Picked</button>
+      <p>Payment Status: <span id="paymentStatus">Pending</span></p>
+      <h3>Delivery Options:</h3>
+      <select id="deliverySelect">
+        <option value="chepterit">Chepterit (Vitamin A need)</option>
+        <option value="tinga">Ting'a (Iron need)</option>
+        <option value="eldoret">Eldoret (Balanced)</option>
+      </select>
+      <button onclick="chooseDelivery()">Deliver</button>
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <script>
+    // Global variables for data storage
+    const registeredFarmers = [];
+    const collectedHealthData = [];
+    const registeredOperators = [];
+    let currentMap; // Store map instance
+    let currentCargo = null; // Current picked-up cargo
+
+    const marketLocations = {
+      chepterit: { lat: 0.3667, lng: 35.1167, title: 'Chepterit' },
+      tinga: { lat: -0.5667, lng: 34.9333, title: 'Ting\'a' },
+      eldoret: { lat: 0.5167, lng: 35.2833, title: 'Eldoret' },
+    };
+    const marketDistances = { chepterit: 0, tinga: 200, eldoret: 100 }; // Approx km
+
+    // Async map initialization
+    async function initializeMap() {
+      try {
+        if (!window.google || !google.maps) {
+          throw new Error('Google Maps API not loaded. Check network or API key.');
+        }
+        const { Map } = await google.maps.importLibrary("maps");
+        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+
+        if (!currentMap) {
+          currentMap = new Map(document.getElementById('map'), {
+            center: marketLocations.chepterit,
+            zoom: 8,
+            mapId: 'YOUR_MAP_ID', // Replace with a valid map ID from Google Cloud Console
+          });
+        }
+
+        if (currentMap.markers) {
+          currentMap.markers.forEach(marker => marker.map = null);
+        }
+        currentMap.markers = [];
+
+        Object.values(marketLocations).forEach(loc => {
+          const marker = new AdvancedMarkerElement({
+            map: currentMap,
+            position: { lat: loc.lat, lng: loc.lng },
+            title: loc.title,
+          });
+          currentMap.markers.push(marker);
+        });
+
+        registeredFarmers.filter(f => f.ready && !f.pickedUp).forEach(farmer => {
+          const [lat, lng] = farmer.gps.split(',').map(Number);
+          if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+            const farmerMarker = new AdvancedMarkerElement({
+              map: currentMap,
+              position: { lat, lng },
+              title: `${farmer.produce} from ${farmer.farmerName}`,
+            });
+            currentMap.markers.push(farmerMarker);
+          } else {
+            console.warn(`Invalid or out-of-range GPS coordinates for farmer ${farmer.farmerName}: ${farmer.gps}. Marker not added.`);
+            // Consider adding showMessage here for user feedback
+          }
+        });
+      } catch (error) {
+        console.error('Map initialization error:', error.message);
+        showMessage('operatorMessage', `Map error: ${error.message}. Please check console for details and ensure API key and Map ID are correct.`, 'error');
+      }
+    }
+
+    function openTab(tabName) {
+      const tabs = document.getElementsByClassName('tab');
+      for (let i = 0; i < tabs.length; i++) {
+        tabs[i].classList.remove('active');
+      }
+      document.getElementById(tabName).classList.add('active');
+
+      if (tabName === 'farmer') updateFarmerDashboard();
+      else if (tabName === 'health') updateHealthDashboard();
+      else if (tabName === 'operator') {
+        updateOperatorDashboard();
+        initializeMap(); // Reinitialize map to ensure markers are updated
+        if (currentMap) {
+          currentMap.setCenter(marketLocations.chepterit);
+          currentMap.setZoom(8);
+        }
+      }
+    }
+
+    function showMessage(elementId, message, type = 'success') {
+      const messageDiv = document.getElementById(elementId);
+      messageDiv.textContent = message;
+      messageDiv.className = `message ${type}`;
+      setTimeout(() => {
+        messageDiv.textContent = '';
+        messageDiv.className = 'message';
+      }, 5000); // Clear message after 5 seconds
+    }
+
+    // Form submission handlers
+    document.getElementById('farmerForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.target);
+      const farmerData = Object.fromEntries(formData.entries());
+      farmerData.ready = event.target.elements.ready.checked;
+      farmerData.pickedUp = false; // Initialize pickedUp status
+      registeredFarmers.push(farmerData);
+      showMessage('farmerMessage', 'Farmer registered successfully!', 'success');
+      event.target.reset();
+      updateFarmerDashboard();
+      updateOperatorDashboard();
+      initializeMap(); // Update map with new farmer marker
+      console.log('Registered Farmers:', registeredFarmers);
+    });
+
+    document.getElementById('healthForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.target);
+      const healthEntry = Object.fromEntries(formData.entries());
+      collectedHealthData.push(healthEntry);
+      showMessage('healthMessage', 'Nutritional data submitted!', 'success');
+      event.target.reset();
+      updateHealthDashboard();
+      console.log('Collected Health Data:', collectedHealthData);
+    });
+
+    document.getElementById('operatorForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.target);
+      const operatorData = Object.fromEntries(formData.entries());
+      operatorData.available = event.target.elements.available.checked;
+      registeredOperators.push(operatorData);
+      showMessage('operatorMessage', 'Operator registered successfully!', 'success');
+      event.target.reset();
+      console.log('Registered Operators:', registeredOperators);
+    });
+
+    // Dashboard updates
+    function updateFarmerDashboard() {
+      if (registeredFarmers.length > 0) {
+        const latestFarmer = registeredFarmers[registeredFarmers.length - 1];
+        document.getElementById('farmerProduceDisplay').textContent = `${latestFarmer.produce} at ${latestFarmer.gps}`;
+        document.getElementById('farmerContactDisplay').textContent = `${latestFarmer.contact}`;
+      } else {
+        document.getElementById('farmerProduceDisplay').textContent = 'N/A';
+        document.getElementById('farmerContactDisplay').textContent = 'N/A';
+      }
+    }
+
+    function updateHealthDashboard() {
+      if (collectedHealthData.length > 0) {
+        const latestHealth = collectedHealthData[collectedHealthData.length - 1];
+        document.getElementById('healthPriorityDisplay').textContent = `${latestHealth.deficiency} - ${latestHealth.crop} for ${latestHealth.zone}`;
+      } else {
+        document.getElementById('healthPriorityDisplay').textContent = 'N/A';
+      }
+    }
+
+    function updateOperatorDashboard() {
+      currentCargo = registeredFarmers.find(farmer => farmer.ready && !farmer.pickedUp);
+      if (currentCargo) {
+        document.getElementById('operatorCargoDisplay').textContent = `${currentCargo.produce} at ${currentCargo.gps}, Contact: ${currentCargo.contact}`;
+        if (collectedHealthData.length > 0) {
+          const latestHealth = collectedHealthData[collectedHealthData.length - 1];
+          const deliverySelect = document.getElementById('deliverySelect');
+          for (let i = 0; i < deliverySelect.options.length; i++) {
+            if (latestHealth.zone && deliverySelect.options[i].text.toLowerCase().includes(latestHealth.zone.toLowerCase())) {
+              deliverySelect.value = deliverySelect.options[i].value;
+              break;
+            }
+            if (latestHealth.crop && deliverySelect.options[i].text.toLowerCase().includes(latestHealth.crop.toLowerCase())) {
+              deliverySelect.value = deliverySelect.options[i].value;
+              break;
+            }
+          }
+        }
+      } else {
+        document.getElementById('operatorCargoDisplay').textContent = 'No cargo awaiting pickup.';
+      }
+      document.getElementById('paymentStatus').textContent = 'Pending';
+    }
+
+    function checkOff() {
+      if (currentCargo) {
+        document.getElementById('paymentStatus').textContent = 'Paid via M-Pesa';
+        currentCargo.pickedUp = true;
+        alert('Farmer paid! Choose delivery location.');
+        updateOperatorDashboard();
+        initializeMap(); // Reinitialize map to remove picked-up farmer marker
+      } else {
+        alert('No cargo to pick off.');
+      }
+    }
+
+    function chooseDelivery() {
+      const deliveryKey = document.getElementById('deliverySelect').value;
+      const destination = marketLocations[deliveryKey];
+      const distance = marketDistances[deliveryKey];
+
+      let paymentFactor = 1.0;
+      if (collectedHealthData.length > 0) {
+        const latestHealthNeed = collectedHealthData[collectedHealthData.length - 1];
+        if (latestHealthNeed.zone && (latestHealthNeed.zone.toLowerCase().includes(deliveryKey) || latestHealthNeed.crop.toLowerCase().includes(deliveryKey))) {
+          paymentFactor = 1.2;
+        }
+      }
+
+      const payment = (1000 - distance * 5) * paymentFactor;
+      alert(`Delivering to ${destination.title} with payment KSh ${payment.toFixed(2)} (distance + nutrition optimized).`);
+
+      if (currentMap && destination) {
+        currentMap.setCenter({ lat: destination.lat, lng: destination.lng });
+        currentMap.setZoom(10);
+      }
+      currentCargo = null;
+      updateOperatorDashboard();
+      initializeMap(); // Reinitialize map to reflect delivery completion
+    }
+
+    // Set initial tab to farmer on page load
+    openTab('farmer');
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_VALID_API_KEY&libraries=marker&callback=initializeMap" async defer></script>
+</body>
+</html>
